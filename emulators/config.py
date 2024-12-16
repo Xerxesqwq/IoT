@@ -1,0 +1,3 @@
+api_key="sk-c3981957ffe24fa79569f0c48b8ece26"
+MQTT_BROKER = "10.119.13.108"
+MQTT_PORT = 1883
