@@ -140,6 +140,12 @@ class DatabaseManager:
             stmt = select(Device).where(Device.user_id == user_id)
             return list(session.execute(stmt).scalars())
 
+    def get_user_devices_by_type(self, user_id: int, device_type: str) -> List[Device]:
+        with self.get_session() as session:
+            stmt = select(Device.name).where(Device.user_id == user_id, Device.device_type == device_type)
+            # return a list of device_ids
+            return list(session.execute(stmt).scalars())
+    
     def update_device(self, device_id: int, **kwargs) -> bool:
         with self.get_session() as session:
             device = session.get(Device, device_id)

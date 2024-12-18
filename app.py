@@ -73,6 +73,24 @@ def logout():
 @app.route('/recognize', methods=['POST'])
 def recognize():
     
+    if 'audio' not in request.files:
+        return jsonify({'success': False, 'error': '没有收到音频文件'}), 400
+    
+    recognized_text = ''
+    audio_file = request.files['audio']
+    if audio_file.filename == '':
+        return jsonify({'success': False, 'error': '文件名为空'}), 400
+
+    try:
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            audio_file.save(temp_file.name)
+            recognized_text = audio_processor.process_audio(temp_file.name)
+    except:
+        return jsonify({
+            'success': False,
+            'error': '抱歉，无法识别您的语音'
+        }), 500
+        
     if 'user_id' not in session:
         return jsonify({
             'success': False,
@@ -81,45 +99,23 @@ def recognize():
     
     user_id = session['user_id']
     prompt = config.base_prompt
-    prompt = prompt.replace('^^^', str(user_id)).replace('+++', "8秒后帮我关闭客厅灯,现在立即帮我打开卧室灯")
-    
+    prompt = prompt.replace('^^^', str(user_id)).replace('+++', recognized_text)
+    print(prompt)
     response = deepseek_client.response(prompt)
+    if 'pass' in response:
+        return jsonify({
+            'success': False,
+            'error': '抱歉，无法执行您的请求'
+        }), 500
+        
     responses = response.split('#')
     for each in responses:
         scheduler.add_raw_command(each)
     return jsonify({
         'success': True,
-        'text': response
+        'text': '已尝试执行您的请求'
     })
     
-    # For Production Environment
-    if 'audio' not in request.files:
-        return jsonify({'success': False, 'error': '没有收到音频文件'}), 400
-    
-    audio_file = request.files['audio']
-    if audio_file.filename == '':
-        return jsonify({'success': False, 'error': '文件名为空'}), 400
-
-    try:
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            audio_file.save(temp_file.name)
-            text = audio_processor.process_audio(temp_file.name)
-            
-            
-            return jsonify({
-                'success': True,
-                'text': text
-            })
-            
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-        
-    finally:
-        if 'temp_file' in locals() and os.path.exists(temp_file.name):
-            os.remove(temp_file.name)
 
 
 

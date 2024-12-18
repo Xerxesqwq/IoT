@@ -36,5 +36,11 @@ class Controller:
         elif operation == Operation.AIR_CONDITIONER_OFF:
             message = json.dumps({"air_conditioner": "OFF"})
         
-        self.controller.publish(device_id, message)        
+        self.controller.publish(device_id, message)
+
+    
+    def device_control_all(self, user_id, type, operation):
+        device_name = self.db.get_user_devices_by_type(user_id, type)
+        for each in device_name:
+            self.device_control(user_id, each, operation)
     
