@@ -157,10 +157,34 @@
                 transform: translateY(-5px);
             }
         }
+        .logout {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+        }
+        
+        .logout-button {
+            color: #718096;
+            text-decoration: none;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: color 0.3s ease;
+        }
+        
+        .logout-button:hover {
+            color: #4299e1;
+        }
     </style>
 </head>
 <body>
     <div class="container">
+        <div class="logout">
+            <a href="/logout" class="logout-button">
+                <i class="fas fa-sign-out-alt"></i> 退出登录
+            </a>
+        </div>
         <h1 class="title">你有什么命令？</h1>
         <button id="recordButton" class="record-button">
             <i class="fas fa-microphone"></i>
