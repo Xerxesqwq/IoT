@@ -14,7 +14,7 @@ class Light:
         self.client.on_message = self.on_message
         self.client.connect(config.MQTT_BROKER, config.MQTT_PORT, 60)
         self.client.subscribe(self.sub_topic)
-        # self.client.loop_forever()
+        self.client.loop_forever()
 
     def on_connect(self, client, userdata, flags, rc):
         print(f"Connected with result code {rc}")
