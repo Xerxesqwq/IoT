@@ -7,6 +7,7 @@ from sqlalchemy.pool import QueuePool
 from dataclasses import dataclass
 from contextlib import contextmanager
 import asyncio
+import json
 
 class Base(DeclarativeBase):
     pass
@@ -32,6 +33,14 @@ class Event(Base):
     
     # 关系定义
     device: Mapped[Device] = relationship("Device", back_populates="events")
+
+class User(Base):
+    __tablename__ = "User"
+    
+    user_id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(255))
+    password: Mapped[str] = mapped_column(String(255))
+
 
 class DatabaseManager:
     def __init__(self, sync_mode: bool = True):
@@ -103,7 +112,28 @@ class DatabaseManager:
         with self.get_session() as session:
             stmt = select(Device.device_id).where(Device.user_id == user_id, Device.name == name)
             result = session.execute(stmt).scalar_one_or_none()
-            return result
+            if result is not None:
+                return result
+            return -1
+    
+    def get_device_status(self, id: int, name = ""):
+        if name == "":
+            device_id = id
+        else:
+            device_id = self.get_device_id(id, name)
+        with self.get_session() as session:
+            device_type = session.execute(select(Device.device_type).where(Device.device_id == device_id)).scalar_one_or_none()
+            # status: the latest status of the device, query from event table
+            # select data from Events where device_id = device_id order by event_time desc limit 1
+            stmt = select(Event.data).where(Event.device_id == device_id).order_by(Event.event_time.desc()).limit(1)
+            status = session.execute(stmt).scalar_one_or_none()
+            if device_type == "LED":
+                data = {"status": status}
+                return json.dumps(data)
+        
+        return json.dumps({})
+    #Device Status, return a json
+    # LED: status: ON/OFF
     
     def get_user_devices(self, user_id: int) -> List[Device]:
         with self.get_session() as session:
@@ -128,6 +158,14 @@ class DatabaseManager:
             session.delete(device)
             return True
 
+    def user_login(self, username: str, password: str) -> Optional[int]:
+        with self.get_session() as session:
+            stmt = select(User.user_id).where(User.username == username, User.password == password)
+            result = session.execute(stmt).scalar_one_or_none()
+            if result is not None:
+                return result
+            return -1
+        
     # 设备相关方法 - 异步版本
     async def async_add_device(self, name: str, user_id: int, device_type: str) -> int:
         async with self.async_session() as session:
