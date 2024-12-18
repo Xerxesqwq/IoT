@@ -1,107 +1,157 @@
-# scheduler.py
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from queue import PriorityQueue
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import inspect
+from typing import Union, Tuple, Optional, Dict, Any
+
+class Command:
+    """命令封装类"""
+    def __init__(self, code: str, globals_dict: dict, locals_dict: dict):
+        self.code = code
+        self.globals_dict = globals_dict
+        self.locals_dict = locals_dict
+
+    def execute(self):
+        try:
+            exec(self.code, self.globals_dict, self.locals_dict)
+        except Exception as e:
+            logging.error(f"Command execution failed: {e}")
+            raise
+
+class TimeParser:
+    """时间解析类"""
+    @staticmethod
+    def parse(time_str: str) -> Tuple[float, str]:
+        """
+        解析时间字符串，返回执行时间戳和时间类型
+        支持格式：
+        - 单个数字: 表示延迟秒数
+        - 两个数字: 表示小时和分钟
+        """
+        try:
+            parts = time_str.strip().split()
+            if len(parts) == 1:
+                # 延迟秒数
+                delay = float(parts[0])
+                return time.time() + delay, "delay"
+            elif len(parts) == 2:
+                # 时 分
+                hour = int(parts[0])
+                minute = int(parts[1])
+                if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                    raise ValueError("Invalid time format")
+                    
+                target_time = datetime.now().replace(hour=hour, minute=minute, second=0)
+                if target_time <= datetime.now():
+                    target_time += timedelta(days=1)
+                
+                return target_time.timestamp(), "absolute"
+            else:
+                raise ValueError("Invalid time format")
+        except ValueError as e:
+            raise ValueError(f"Time parsing error: {e}")
 
 class Scheduler:
+    """调度器类"""
     def __init__(self):
         self._queue = PriorityQueue()
         self._running = True
         self._executor = ThreadPoolExecutor(max_workers=10)
         self._wakeup_event = threading.Event()
+        self._lock = threading.Lock()
         
         self._scheduler_thread = threading.Thread(target=self._scheduler_loop, daemon=True)
         self._scheduler_thread.start()
     
-    def add(self, delay_seconds, cmd_str, context_globals=None, context_locals=None):
+    def add_command(self, command_str: str, context_globals: Optional[Dict] = None, 
+                    context_locals: Optional[Dict] = None) -> None:
         """
-        添加任务到调度器
-        :param delay_seconds: 延迟秒数
-        :param cmd_str: 命令字符串或者可调用对象
+        添加命令到调度器
+        :param command_str: 完整的命令字符串，包括时间和代码
         :param context_globals: 全局上下文
         :param context_locals: 局部上下文
         """
-        # 如果没有提供上下文，尝试从调用栈获取
+        # 获取上下文
         if context_globals is None or context_locals is None:
-            # 获取调用者的帧
             frame = inspect.currentframe().f_back
             context_globals = context_globals or frame.f_globals
             context_locals = context_locals or frame.f_locals
 
-        # 计算执行时间
-        execute_time = time.time() + delay_seconds
-            
-        # 将命令和上下文打包
-        task = (cmd_str, context_globals, context_locals)
-        self._queue.put((execute_time, task))
+        # 分离时间和代码
+        lines = command_str.strip().split('\n')
+        if not lines:
+            raise ValueError("Empty command")
+
+        # 解析时间
+        execute_time, _ = TimeParser.parse(lines[0])
         
-        try:
-            if execute_time < self._queue.queue[0][0]:
-                self._wakeup_event.set()
-        except:
-            self._wakeup_event.set()
-    
-    def add_at_time(self, hour, minute, second, cmd_str, context_globals=None, context_locals=None):
-        """在指定时间执行任务"""
-        if context_globals is None or context_locals is None:
-            frame = inspect.currentframe().f_back
-            context_globals = context_globals or frame.f_globals
-            context_locals = context_locals or frame.f_locals
-            
-        now = datetime.now()
-        execute_time = now.replace(hour=hour, minute=minute, second=second).timestamp()
-        if execute_time <= time.time():
-            execute_time += 24 * 3600
-            
-        task = (cmd_str, context_globals, context_locals)
-        self._queue.put((execute_time, task))
+        # 处理代码部分
+        code = '\n'.join(lines[1:]) if len(lines) > 1 else ""
+        if not code.strip():
+            raise ValueError("Empty code")
+
+        # 创建命令对象
+        cmd = Command(code, context_globals, context_locals)
         
-        try:
-            if execute_time < self._queue.queue[0][0]:
-                self._wakeup_event.set()
-        except:
+        # 添加到队列
+        with self._lock:
+            self._queue.put((execute_time, cmd))
             self._wakeup_event.set()
-    
+
+    def add_raw_command(self, raw_command: str) -> None:
+        """
+        直接从get_command()函数获取的原始命令添加到调度器
+        :param raw_command: get_command()返回的原始命令字符串
+        """
+        # 获取当前上下文
+        frame = inspect.currentframe().f_back
+        context_globals = frame.f_globals
+        context_locals = frame.f_locals
+        
+        self.add_command(raw_command, context_globals, context_locals)
+
     def _scheduler_loop(self):
-        """调度器循环"""
+        """调度器主循环"""
         while self._running:
             try:
                 if self._queue.empty():
                     self._wakeup_event.wait(timeout=0.1)
                     continue
                 
-                next_time, task = self._queue.queue[0]
-                now = time.time()
+                with self._lock:
+                    if self._queue.empty():
+                        continue
+                    next_time, cmd = self._queue.queue[0]
+                    now = time.time()
                 
                 if next_time <= now:
                     self._queue.get()
-                    self._executor.submit(self._execute_task, task)
-                    self._wakeup_event.clear()
+                    self._executor.submit(self._execute_task, cmd)
                 else:
                     wait_time = next_time - now
                     self._wakeup_event.wait(timeout=min(wait_time, 1))
-                    self._wakeup_event.clear()
+                self._wakeup_event.clear()
                     
             except Exception as e:
                 logging.error(f"Scheduler error: {e}")
-    
-    def _execute_task(self, task):
-        """在线程池中执行任务"""
+
+    def _execute_task(self, cmd: Command):
+        """执行任务"""
         try:
-            cmd_str, globals_dict, locals_dict = task
-            if callable(cmd_str):
-                cmd_str()
-            else:
-                exec(cmd_str, globals_dict, locals_dict)
+            cmd.execute()
         except Exception as e:
             logging.error(f"Task execution failed: {e}")
-    
+
     def stop(self):
         """停止调度器"""
         self._running = False
         self._wakeup_event.set()
         self._executor.shutdown(wait=False)
+
+    @property
+    def pending_tasks(self):
+        """返回待执行的任务数量"""
+        return self._queue.qsize()
