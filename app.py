@@ -100,7 +100,7 @@ def recognize():
     user_id = session['user_id']
     prompt = config.base_prompt
     prompt = prompt.replace('^^^', str(user_id)).replace('+++', recognized_text)
-    print(prompt)
+    # print(prompt)
     response = deepseek_client.response(prompt)
     if 'pass' in response:
         return jsonify({

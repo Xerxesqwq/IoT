@@ -127,17 +127,19 @@ class DatabaseManager:
             # select data from Events where device_id = device_id order by event_time desc limit 1
             stmt = select(Event.data).where(Event.device_id == device_id).order_by(Event.event_time.desc()).limit(1)
             status = session.execute(stmt).scalar_one_or_none()
-            if device_type == "LED":
-                data = {"status": status}
-                return json.dumps(data)
-        
-        return json.dumps({})
+            data = {"device_id": device_id}
+            data["status"] = status
+            data["device_type"] = device_type
+            
+        if data.get("status") is None:
+            return None
+        return data
     #Device Status, return a json
     # LED: status: ON/OFF
     
     def get_user_devices(self, user_id: int) -> List[Device]:
         with self.get_session() as session:
-            stmt = select(Device).where(Device.user_id == user_id)
+            stmt = select(Device.device_id).where(Device.user_id == user_id).order_by(Device.device_id)
             return list(session.execute(stmt).scalars())
 
     def get_user_devices_by_type(self, user_id: int, device_type: str) -> List[Device]:
@@ -172,6 +174,17 @@ class DatabaseManager:
                 return result
             return -1
         
+    def get_all_device_status(self, user_id: int):
+        """
+        Get all devices status of a user, return a json
+        """
+        device_list = self.get_user_devices(user_id)
+        status_list = []
+        for each in device_list:
+            _status = self.get_device_status(each)
+            status_list.append(_status)
+        return status_list
+    
     # 设备相关方法 - 异步版本
     async def async_add_device(self, name: str, user_id: int, device_type: str) -> int:
         async with self.async_session() as session:

@@ -23,7 +23,8 @@ class MQTTController:
 
     def publish(self, device_id, message):
         topic = f"devices/control/{device_id}"
-        if self.client.publish(topic, message).rc == 0:
+        rc = self.client.publish(topic, message).rc
+        if rc == 0:
             print(f"Published message '{message}' to topic '{topic}'")
         else:
-            print(f"Failed to publish message '{message}' to topic '{topic}'")
+            print(f"Failed to publish message '{message}' to topic '{topic}', rc = '{rc}'")
