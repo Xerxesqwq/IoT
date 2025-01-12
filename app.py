@@ -8,6 +8,7 @@ import AudioProcessor
 from utils import DatabaseManager
 from utils import Scheduler
 from utils import Controller
+import json
 from utils import Operation
 import config
 
@@ -24,6 +25,7 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 deepseek_client = deepseek.Deepseek()
 audio_processor = AudioProcessor.AudioProcessor()
 db_manager = DatabaseManager(sync_mode=True)
+database = DatabaseManager(sync_mode=True)
 
 controller = Controller()
 scheduler = Scheduler()
@@ -96,12 +98,18 @@ def recognize():
             'success': False,
             'error': '请先登录'
         })
+    #recognized_text = '一分钟之后如果我的客厅灯还是公安的那么我的厨房音响帮我播放生日快乐'
     
     user_id = session['user_id']
-    prompt = config.base_prompt
-    prompt = prompt.replace('^^^', str(user_id)).replace('+++', recognized_text)
-    # print(prompt)
+    with open('prompt.txt', 'r', encoding='utf-8') as file:
+        prompt = file.read()
+    prompt = prompt.replace('<devices>', str(db_manager.get_user_devices(user_id, name=True)))
+    prompt = prompt.replace('<id>', str(user_id)) + recognized_text
+    #print(prompt)
     response = deepseek_client.response(prompt)
+    response = response.split('```')[-2]
+    print(response)
+    
     if 'pass' in response:
         return jsonify({
             'success': False,
@@ -116,9 +124,6 @@ def recognize():
         'text': '已尝试执行您的请求'
     })
     
-
-
-
 
 if __name__ == '__main__':
     app.run(port=5001)

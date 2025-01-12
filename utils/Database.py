@@ -41,6 +41,11 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(255))
     password: Mapped[str] = mapped_column(String(255))
 
+class Music(Base):
+    __tablename__ = "Music"
+    Name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    tones: Mapped[str] = mapped_column(String(511))
+    durations: Mapped[int] = mapped_column(String(511))
 
 class DatabaseManager:
     def __init__(self, sync_mode: bool = True):
@@ -104,6 +109,13 @@ class DatabaseManager:
             session.commit()
             return device.device_id
 
+
+    def get_music(self, name: str) -> Optional[Music]:
+        with self.get_session() as session:
+            tones = session.execute(select(Music.tones).where(Music.Name == name)).scalar_one_or_none()
+            durations = session.execute(select(Music.durations).where(Music.Name == name)).scalar_one_or_none()
+            return {"tones": tones, "durations": durations}
+    
     def get_device(self, device_id: int) -> Optional[Device]:
         with self.get_session() as session:
             return session.get(Device, device_id)
@@ -116,6 +128,27 @@ class DatabaseManager:
                 return result
             return -1
     
+    # def get_device_status(self, id: int, name = ""):
+    #     if name == "":
+    #         device_id = id
+    #     else:
+    #         device_id = self.get_device_id(id, name)
+    #     with self.get_session() as session:
+    #         device_type = session.execute(select(Device.device_type).where(Device.device_id == device_id)).scalar_one_or_none()
+    #         # status: the latest status of the device, query from event table
+    #         # select data from Events where device_id = device_id order by event_time desc limit 1
+    #         stmt = select(Event.data).where(Event.device_id == device_id).order_by(Event.event_time.desc()).limit(1)
+    #         status = session.execute(stmt).scalar_one_or_none()
+    #         data = {"device_id": device_id}
+    #         data["status"] = status
+    #         data["device_type"] = device_type
+            
+    #     if data.get("status") is None:
+    #         return None
+    #     return data
+    #Device Status, return a json
+    # LED: status: ON/OFF
+    
     def get_device_status(self, id: int, name = ""):
         if name == "":
             device_id = id
@@ -125,21 +158,21 @@ class DatabaseManager:
             device_type = session.execute(select(Device.device_type).where(Device.device_id == device_id)).scalar_one_or_none()
             # status: the latest status of the device, query from event table
             # select data from Events where device_id = device_id order by event_time desc limit 1
-            stmt = select(Event.data).where(Event.device_id == device_id).order_by(Event.event_time.desc()).limit(1)
-            status = session.execute(stmt).scalar_one_or_none()
-            data = {"device_id": device_id}
-            data["status"] = status
-            data["device_type"] = device_type
-            
-        if data.get("status") is None:
-            return None
+            if device_type == 'LED':
+                data = {"status": session.execute(select(Event.data).where(Event.device_id == device_id).order_by(Event.event_time.desc()).limit(1)).scalar_one_or_none()}
+                data = json.dumps(data)
+            elif device_type == 'DHT':
+                data = session.execute(select(Event.data).where(Event.device_id == device_id).order_by(Event.event_time.desc()).limit(1)).scalar_one_or_none()
+            else:
+                data = {"status": "Unknown"}
         return data
-    #Device Status, return a json
-    # LED: status: ON/OFF
     
-    def get_user_devices(self, user_id: int) -> List[Device]:
+    def get_user_devices(self, user_id: int, name = False) -> List[Device]:
         with self.get_session() as session:
-            stmt = select(Device.device_id).where(Device.user_id == user_id).order_by(Device.device_id)
+            if not name:
+                stmt = select(Device.device_id).where(Device.user_id == user_id).order_by(Device.device_id)
+            else:
+                stmt = select(Device.name).where(Device.user_id == user_id).order_by(Device.device_id)
             return list(session.execute(stmt).scalars())
 
     def get_user_devices_by_type(self, user_id: int, device_type: str) -> List[Device]:
